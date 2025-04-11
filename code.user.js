@@ -2806,69 +2806,84 @@
         function marketOverpricedQueueWorker(item, ignoreErrors, callback) {
             const listingUI = getListingFromLists(item.listing).elm;
 
-            market.removeListing(
-                item.listing, false,
-                (errorRemove) => {
-                    if (!errorRemove) {
-                        $('.actual_content', listingUI).css('background', COLOR_PENDING);
+			market.removeListing(
+				item.listing, false,
+				(errorRemove) => {
+					if (!errorRemove) {
+						$('.actual_content', listingUI).css('background', COLOR_PENDING);
 
-                        setTimeout(() => {
-                            const itemName = $('.market_listing_item_name_link', listingUI).first().attr('href');
-                            const marketHashNameIndex = itemName.lastIndexOf('/') + 1;
-                            const marketHashName = itemName.substring(marketHashNameIndex);
-                            const decodedMarketHashName = decodeURIComponent(itemName.substring(marketHashNameIndex));
-                            let newAssetId = -1;
+						setTimeout(() => {
+							const itemName = $('.market_listing_item_name_link', listingUI).first().attr('href');
+							const marketHashNameIndex = itemName.lastIndexOf('/') + 1;
+							const marketHashName = itemName.substring(marketHashNameIndex);
+							const decodedMarketHashName = decodeURIComponent(itemName.substring(marketHashNameIndex));
+							let newAssetId = -1;
 
-                            unsafeWindow.RequestFullInventory(`${market.inventoryUrl + item.appid}/${item.contextid}/`, {}, null, null, (transport) => {
-                                if (transport.responseJSON && transport.responseJSON.success) {
-                                    const inventory = transport.responseJSON.rgInventory;
+							unsafeWindow.RequestFullInventory(`${market.inventoryUrl + item.appid}/${item.contextid}/`, {}, null, null, (transport) => {
+								if (transport.responseJSON && transport.responseJSON.success) {
+									const inventory = transport.responseJSON.rgInventory;
 
-                                    for (const child in inventory) {
-                                        if (marketListingsRelistedAssets.indexOf(child) == -1 && inventory[child].appid == item.appid && (inventory[child].market_hash_name == decodedMarketHashName || inventory[child].market_hash_name == marketHashName)) {
-                                            newAssetId = child;
-                                            break;
-                                        }
-                                    }
+									// Поиск элемента в инвентаре с нужным market_hash_name
+									for (const child in inventory) {
+										if (marketListingsRelistedAssets.indexOf(child) === -1 &&
+											inventory[child].appid == item.appid &&
+											(inventory[child].market_hash_name === decodedMarketHashName || inventory[child].market_hash_name === marketHashName)
+										) {
+											newAssetId = child;
+											break;
+										}
+									}
 
-                                    if (newAssetId == -1) {
-                                        $('.actual_content', listingUI).css('background', COLOR_ERROR);
-                                        return callback(false);
-                                    }
+									if (newAssetId == -1) {
+										$('.actual_content', listingUI).css('background', COLOR_ERROR);
+										return callback(false);
+									}
 
-                                    item.assetid = newAssetId;
-                                    marketListingsRelistedAssets.push(newAssetId);
+									// Обновляем assetid и определяем количество на основе данных из инвентаря,
+									// если количество не задано в объекте item.
+									item.assetid = newAssetId;
+									if (inventory[newAssetId] && typeof inventory[newAssetId].amount !== 'undefined') {
+										item.amount = inventory[newAssetId].amount;
+									} else {
+										// Можно оставить значение по умолчанию или задать другое значение,
+										// если информации из инвентаря нет.
+										item.amount = 1;
+									}
+									marketListingsRelistedAssets.push(newAssetId);
 
-                                    market.sellItem(
-                                        item,
-                                        item.sellPrice,
-                                        (errorSell) => {
-                                            if (!errorSell) {
-                                                $('.actual_content', listingUI).css('background', COLOR_SUCCESS);
+									// Вызываем функцию продажи, передавая все необходимые параметры:
+									// sessionid, appid, contextid, assetid, amount и price.
+									market.sellItem(
+										item,
+										item.sellPrice,
+										(errorSell) => {
+											if (!errorSell) {
+												$('.actual_content', listingUI).css('background', COLOR_SUCCESS);
 
-                                                setTimeout(() => {
-                                                    removeListingFromLists(item.listing);
-                                                }, 3000);
+												setTimeout(() => {
+													removeListingFromLists(item.listing);
+												}, 3000);
 
-                                                return callback(true);
-                                            } else {
-                                                $('.actual_content', listingUI).css('background', COLOR_ERROR);
-                                                return callback(false);
-                                            }
-                                        }
-                                    );
+												return callback(true);
+											} else {
+												$('.actual_content', listingUI).css('background', COLOR_ERROR);
+												return callback(false);
+											}
+										}
+									);
+								} else {
+									$('.actual_content', listingUI).css('background', COLOR_ERROR);
+									return callback(false);
+								}
+							});
+						}, getRandomInt(1500, 2500)); // Пауза, чтобы удостовериться, что товар вернулся в инвентарь.
+					} else {
+						$('.actual_content', listingUI).css('background', COLOR_ERROR);
+						return callback(false);
+					}
+				}
+			);
 
-                                } else {
-                                    $('.actual_content', listingUI).css('background', COLOR_ERROR);
-                                    return callback(false);
-                                }
-                            });
-                        }, getRandomInt(1500, 2500)); // Wait a little to make sure the item is returned to inventory.
-                    } else {
-                        $('.actual_content', listingUI).css('background', COLOR_ERROR);
-                        return callback(false);
-                    }
-                }
-            );
         }
 
         // Queue an overpriced item listing to be relisted.
